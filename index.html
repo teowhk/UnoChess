@@ -42,19 +42,27 @@ button.p{background:var(--fg);color:var(--bg)}
 @keyframes flip{0%{transform:perspective(800px) rotateY(-100deg) translateY(-30px) scale(.8);opacity:0}55%{opacity:1}100%{transform:perspective(800px) rotateY(0) translateY(0) scale(1)}}
 .uc.pop{animation:flip .55s cubic-bezier(.2,.8,.25,1)}
 @media(prefers-reduced-motion:reduce){.uc.pop{animation:none}}
-#rv button{font-size:20px;margin:2px}#rv .on{background:var(--fg);color:var(--bg)}
+#rv button{font-size:20px;margin:2px}#rv .on,#cf .on{background:var(--fg);color:var(--bg)}
 .row{margin:8px 0}
+#bw{position:relative;width:var(--s)}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;width:var(--s)}
+.ck{font-variant-numeric:tabular-nums;font-size:20px;padding:2px 10px;border:1px solid var(--fg)}.ck.on{background:var(--fg);color:var(--bg)}
+#cf,#lo{display:none}#cf{width:min(94vw,560px)}#cf .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}#cf b{min-width:5em}#cf button:disabled{opacity:1;cursor:default}
+#lo{position:absolute;inset:0;flex-direction:column;background:var(--bg);background:color-mix(in srgb,var(--bg) 92%,transparent);border:2px solid var(--fg);box-sizing:border-box;--cw:calc(var(--s)*.27)}
+.lh{flex:1;display:flex;align-items:center;justify-content:center;gap:14px}.lh+.lh{border-top:2px solid var(--fg)}
+#game.lobby #cf{display:block}#game.life #lo{display:flex}
+#game.lobby #bw,#game.lobby .bar,#game.lobby #L,#game.life #L{display:none}
 </style></head><body><main>
 <h1>♟ 우노 체스</h1>
 <div id="lobby">
-<p>방 코드를 입력해 입장하세요. 같은 코드로 들어온 두 번째 사람이 상대가 됩니다.</p>
+<p>방 코드를 입력해 입장하세요. 처음 입장한 사람이 방장이 되어 진영·시간을 정하고 게임을 시작합니다.</p>
 <input id="cd" maxlength="6" placeholder="방 코드" autocomplete="off">
 <button class="p" id="go">입장</button> <button id="nw">새 방 코드 만들기</button>
 <p id="er"></p>
 </div>
 <div id="game">
 <section id="L"><div id="lc"></div><div class="ctl"><button class="p" id="dr">카드 뽑기</button><div>덱 <b id="dk"></b>장 남음</div></div></section>
-<section id="M"><div id="st"></div><div id="bd"></div></section>
+<section id="M"><div id="st"></div><div id="cf"></div><div class="bar" id="tp"></div><div id="bw"><div id="bd"></div><div id="lo"></div></div><div class="bar" id="bt"></div></section>
 <section id="R"><div class="row">방 코드 <b id="rc"></b> · 내 진영 <b id="mc"></b></div><div id="rv" class="row"></div><div id="lg"></div></section>
 </div>
 </main>
@@ -63,16 +71,19 @@ button.p{background:var(--fg);color:var(--bg)}
 <script>
 const $=s=>document.querySelector(s),G={K:'♚',Q:'♛',R:'♜',B:'♝',N:'♞',P:'♟'},CC={R:'#d33',Y:'#eb0',G:'#2a5',B:'#35c',K:'#1a1a1a'};
 const N=[[1,2],[2,1],[-1,2],[-2,1],[1,-2],[2,-1],[-1,-2],[-2,-1]];
-let me,st=null,sel=null,tg=[],rsel=null,hostConn=null,conns=[];
+let t0=0,plc=[null,null],me,st=null,sel=null,tg=[],rsel=null,hostConn=null,conns=[];
 const rnd=()=>Math.random().toString(36).slice(2,8);
 function deck(){const d=[];for(const c of'RYGB'){d.push('n0'+c);for(let v=1;v<=5;v++)d.push('n'+v+c,'n'+v+c);for(const k of'srd')d.push(k+(k==='d'?2:0)+c,k+(k==='d'?2:0)+c)}
 for(let i=0;i<4;i++)d.push('w4K');for(let i=d.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[d[i],d[j]]=[d[j],d[i]]}return d}
 const lab=c=>({n:c[1],s:'⊘ 스킵',r:'⇄ 리버스',d:'+2 부활',w:'+4 부활'})[c[0]];
-function newGame(){const W=Math.random()<.5;return{p:[me,null],c:W?['w','b']:['b','w'],t:W?0:1,b:'rnbqkbnr/pppppppp/......../......../......../......../PPPPPPPP/RNBQKBNR'.replace(/\//g,'').split(''),
-cap:{w:[],b:[]},mv:[],ep:null,d:deck(),card:null,n:0,rv:0,ph:'draw',win:null,lg:['게임 시작 — 백이 먼저 카드를 뽑습니다'],seq:0}}
+function newGame(){return{p:[me,null],c:['w','b'],t:0,b:'rnbqkbnr/pppppppp/......../......../......../......../PPPPPPPP/RNBQKBNR'.replace(/\//g,'').split(''),
+cap:{w:[],b:[]},mv:[],ep:null,d:deck(),card:null,n:0,rv:0,ph:'lobby',win:null,lg:['상대를 기다리는 중 — 방장이 게임을 설정합니다'],seq:0,cfg:{side:'r',time:300,fi:0,inc:3},lc:[null,null],kl:{w:null,b:null},tm:[0,0],inc:0,run:null,why:null,h:1}}
+function begin(s){const w=s.cfg.side==='r'?(Math.random()<.5?'w':'b'):s.cfg.side;s.c=w==='w'?['w','b']:['b','w'];s.t=s.c[0]==='w'?0:1;s.tm=[s.cfg.time*1000,s.cfg.time*1000];s.inc=s.cfg.fi?s.cfg.inc:0;s.ph='life';lg(s,'방장이 '+(s.cfg.side==='r'?'랜덤 → ':'')+nm(w)+'을 선택했습니다 — 각자 카드를 뽑아 왕의 목숨을 정하세요')}
+function lifeDraw(s,k){const v=1+Math.random()*5|0;s.lc[k]='n'+v+'RYGB'[Math.random()*4|0];s.kl[s.c[k]]=v;lg(s,nm(s.c[k])+' 왕의 목숨: '+v);
+if(s.lc[0]&&s.lc[1])setTimeout(()=>{if(st.ph==='life'){st.ph='draw';lg(st,'게임 시작 — 백이 먼저 카드를 뽑습니다');commit()}},2200)}
 const col=s=>s.c[s.t],nm=c=>c==='w'?'백':'흑',own=(x,w)=>x!=='.'&&(x<'a')===w;
 function gen(s,i){const b=s.b,p=b[i],w=p<'a',t=p.toUpperCase(),r=i>>3,c=i&7,o=[],en=x=>x!=='.'&&(x<'a')!==w;
-const add=(rr,cc)=>{if(rr<0||rr>7||cc<0||cc>7)return 0;const j=rr*8+cc,x=b[j];if(x==='.'){o.push(j);return 1}if(en(x))o.push(j);return 0};
+const add=(rr,cc)=>{if(rr<0||rr>7||cc<0||cc>7)return 0;const j=rr*8+cc,x=b[j];if(x==='.'){o.push(j);return 1}if(en(x)&&!(t==='K'&&x.toUpperCase()==='K'))o.push(j);return 0};
 if(t==='P'){const d=w?-1:1,f=r+d;if(f>=0&&f<8){const j=f*8+c;if(b[j]==='.'){o.push(j);if(r===(w?6:1)&&b[j+d*8]==='.')o.push(j+d*8)}
 for(const e of[-1,1]){if(c+e<0||c+e>7)continue;const k=j+e;if(en(b[k])||(s.ep&&s.ep.to===k&&s.ep.by!==(w?'w':'b')))o.push(k)}}}
 else if(t==='N')for(const[a,e]of N)add(r+a,c+e);
@@ -85,11 +96,14 @@ const any=s=>s.b.some((p,i)=>own(p,col(s)==='w')&&gen(s,i).length);
 function lg(s,m){s.lg.push(m);if(s.lg.length>8)s.lg.shift()}
 function doMove(s,i,j){const b=s.b,p=b[i],w=p<'a',t=p.toUpperCase();let cp=b[j];
 if(t==='P'&&cp==='.'&&(i&7)!==(j&7)){cp=b[s.ep.cap];b[s.ep.cap]='.'}
-if(cp!=='.'){if(cp.toUpperCase()==='K'){s.win=s.t;lg(s,nm(col(s))+'이(가) 왕을 잡았습니다!')}else s.cap[cp<'a'?'w':'b'].push(cp.toUpperCase())}
+if(cp!=='.'&&cp.toUpperCase()==='K'){const kc=cp<'a'?'w':'b',n=--s.kl[kc];s.mv.push(i);s.tm[s.t]+=s.inc*1000;b[i]='.';s.ep=null;
+if(n<=0){s.win=s.t;s.why='k';b[j]=p;lg(s,nm(col(s))+'이(가) 왕의 마지막 목숨을 빼앗았습니다!')}
+else{s.cap[w?'w':'b'].push(t);lg(s,nm(kc)+' 왕 목숨 -1 (남은 목숨 '+n+') · 공격한 '+G[t]+' 파괴')}return}
+if(cp!=='.')s.cap[cp<'a'?'w':'b'].push(cp.toUpperCase());
 b[j]=p;b[i]='.';
 if(t==='K'&&Math.abs(j-i)===2){const ro=j>i?i+3:i-4,to=j>i?i+1:i-1;b[to]=b[ro];b[ro]='.';s.mv.push(ro,to)}
 if(t==='P'&&j>>3===(w?0:7))b[j]=w?'Q':'q';
-s.ep=t==='P'&&Math.abs(j-i)===16?{to:(i+j)/2,cap:j,by:w?'w':'b'}:null;s.mv.push(i,j)}
+s.ep=t==='P'&&Math.abs(j-i)===16?{to:(i+j)/2,cap:j,by:w?'w':'b'}:null;s.mv.push(i,j);s.tm[s.t]+=s.inc*1000}
 function chk(s){if(s.win==null&&!s.d.length){s.ph='over';s.win=-1;lg(s,'모든 카드를 사용했습니다 — 무승부')}}
 function endTurn(s){if(s.win!=null)return;s.t=1-s.t;s.ph='draw';s.n=0;chk(s)}
 function after(s){if(s.win!=null){s.ph='over';return}if(--s.n<=0||!any(s))endTurn(s)}
@@ -103,7 +117,7 @@ else if(k==='s')endTurn(s);
 else if(k==='r'){s.c=[s.c[1],s.c[0]];s.ep=null;s.ph='draw';lg(s,'체스판이 돌아갑니다 — 진영 교체! 같은 사람이 다시 뽑습니다');chk(s)}
 else{s.rv=v;s.ph='rev';revChk(s)}}
 const pi=()=>st?st.p.indexOf(me):-1,mine=()=>st&&st.p[1]&&st.ph!=='over'&&st.p[st.t]===me;
-function commit(){st.seq++;sel=null;tg=[];if(st.ph!=='rev')rsel=null;send();render()}
+function commit(){const n=performance.now();if(st.run!=null)st.tm[st.run]=Math.max(0,st.tm[st.run]-(n-t0));t0=n;st.run=['draw','move','rev'].includes(st.ph)?st.t:null;st.seq++;st.h=hostConn?0:1;sel=null;tg=[];if(st.ph!=='rev')rsel=null;send();render()}
 const sym=c=>({n:c[1],s:'⊘',r:'⇄',d:'+2',w:'+4'})[c[0]];
 const eff=c=>c[0]==='n'?(+c[1]?'수를 '+c[1]+'번 둡니다':'수를 둘 수 없어요 · 턴 종료'):({s:'턴 스킵',r:'진영 교체 · 한 번 더 뽑기',d:'기물 2개 부활',w:'기물 4개 부활'})[c[0]];
 function cardUI(c,f,i0){if(!c)return'<div class="uc ph">아직 뽑은<br>카드가 없어요</div>';
@@ -117,13 +131,15 @@ function fx(){const m=st.mv.length,k=st.cap.w.length+st.cap.b.length,o=st.ph==='
 if(pv){if(m>pv.m||k<pv.k)sfx('chess');if(st.d.length<pv.d)f=true;
 if(o&&!pv.o&&st.win>=0&&i0>=0)setTimeout(()=>sfx(i0===st.win?'win':'lose'),450)}
 pv={m,k,o,d:st.d.length};return f}
-function render(){if(!st)return;const fr=fx(),i0=pi(),mc=i0<0?st.c[0]:st.c[i0],fl=mc==='b',h=[],T=st.ph==='rev'&&rsel?spots(st,rsel):tg;
+function render(){if(!st)return;$('#game').className=st.ph;const fr=fx(),i0=pi(),mc=i0<0?st.c[0]:st.c[i0],fl=mc==='b',h=[],T=st.ph==='rev'&&rsel?spots(st,rsel):tg;
 for(let k=0;k<64;k++){const i=fl?63-k:k,p=st.b[i],r=i>>3,c=i&7;
 h.push(`<div class="q ${(r+c)%2?'d':'l'}${i===sel?' s':''}${T.includes(i)?' t':''}" data-i="${i}">${p==='.'?'':`<span class="${p<'a'?'w':'b'}">${G[p.toUpperCase()]}\uFE0E</span>`}</div>`)}
 $('#bd').innerHTML=h.join('');
-let s;if(!st.p[1])s='상대를 기다리는 중…';else if(st.ph==='over')s=st.win<0?'무승부 — 모든 카드를 사용했습니다':i0<0?'게임 종료':i0===st.win?'🏆 승리! 상대의 왕을 잡았습니다':'패배 — 왕을 잡혔습니다';
+let s;if(st.ph==='lobby')s=i0===0?(st.p[1]?'상대가 입장했습니다 — 설정 후 게임을 시작하세요':'상대를 기다리는 중…'):'방장이 게임을 설정하는 중…';
+else if(st.ph==='life')s=st.lc[0]&&st.lc[1]?'두 사람 모두 뽑았습니다 — 곧 시작합니다':i0>=0&&st.lc[i0]==null?'카드를 뽑아 내 왕의 목숨을 정하세요':'상대가 카드를 뽑는 중…';
+else if(st.ph==='over')s=st.win<0?'무승부 — 모든 카드를 사용했습니다':i0<0?'게임 종료':i0===st.win?'🏆 승리! '+(st.why==='t'?'상대의 시간이 모두 소진되었습니다':'상대 왕의 목숨을 모두 빼앗았습니다'):'패배 — '+(st.why==='t'?'시간 초과':'왕의 목숨을 모두 잃었습니다');
 else s=(mine()?'내 차례 · ':'상대 차례 · ')+({draw:'카드를 뽑으세요',move:'남은 수 '+st.n,rev:'부활 남은 수 '+st.rv})[st.ph];
-$('#st').textContent=s;$('#mc').textContent=i0<0?'관전':nm(mc);$('#dk').textContent=st.d.length;
+$('#st').textContent=s;$('#mc').textContent=st.ph==='lobby'?'미정':i0<0?'관전':nm(mc);$('#dk').textContent=st.d.length;bars(i0);if(st.ph==='lobby')cfgUI(i0);if(st.ph==='life')lifeUI(i0);clk();
 if(lcKey!==st.d.length){lcKey=st.d.length;$('#lc').innerHTML=cardUI(st.card,fr,i0)}
 $('#dr').disabled=!(mine()&&st.ph==='draw');
 const cp=st.c[st.t],bag=st.ph==='rev'&&mine()?[...new Set(st.cap[cp])]:[];
@@ -135,10 +151,22 @@ else if(own(p,col(st)==='w')){sel=i;tg=gen(st,i);render()}else{sel=null;tg=[];re
 else if(st.ph==='rev'&&rsel&&spots(st,rsel).includes(i)){revive(st,rsel,i);rsel=null;commit()}};
 $('#rv').onclick=e=>{const b=e.target.closest('[data-t]');if(b){rsel=b.dataset.t;render()}};
 $('#dr').onclick=()=>{if(mine()&&st.ph==='draw'){draw(st);commit()}};
+const rem=k=>Math.max(0,st.tm[k]-(st.run===k?performance.now()-t0:0)),fmt=ms=>{const t=Math.ceil(ms/1000);return(t/60|0)+':'+String(t%60).padStart(2,'0')};
+function clk(){if(!st)return;document.querySelectorAll('.ck').forEach(e=>e.textContent=fmt(rem(+e.dataset.k)));
+if(!hostConn&&st.run!=null&&rem(st.run)<=0){const k=st.run;st.tm[k]=0;st.win=1-k;st.why='t';st.ph='over';lg(st,nm(st.c[k])+' 시간 초과!');commit()}}
+function bars(i0){const bi=Math.max(i0,0),H=k=>{const c=st.c[k],l=st.kl[c];return`<span>${k===i0?'나':i0<0?(k+1)+'번':'상대'} · ${nm(c)}</span><span>❤ ${l==null?'?':l}</span><b class="ck${st.run===k?' on':''}" data-k="${k}"></b>`};$('#tp').innerHTML=H(1-bi);$('#bt').innerHTML=H(bi)}
+function lifeUI(i0){const bi=Math.max(i0,0),H=k=>{const c=st.lc[k];if(!c)return k===i0?'<div class="uc ph">내 카드</div><button class="p" id="lf">카드 뽑기</button>':'<div class="uc ph">뽑는 중…</div><div class="cap">'+(k===i0?'':'상대가 카드를 뽑는 중')+'</div>';const v=c[1];
+return`<div class="uc${plc[k]?'':' pop'}" style="--c:${CC[c[2]]}"><i class="k tl">${v}</i><b class="m">${v}</b><i class="k br">${v}</i></div><div class="cap"><b>${k===i0?'내 왕':'상대 왕'}</b><br>목숨 ❤ ${v}</div>`};
+$('#lo').innerHTML='<div class="lh">'+H(1-bi)+'</div><div class="lh">'+H(bi)+'</div>';plc=st.lc.slice()}
+function cfgUI(i0){const c=st.cfg,H=i0===0,d=H?'':' disabled',B=(k,v,t)=>`<button data-k="${k}" data-v="${v}" class="${c[k]===v?'on':''}"${d}>${t}</button>`;
+$('#cf').innerHTML=`<div class="row"><b>${H?'내':'방장'} 진영</b>${B('side','w','백')}${B('side','b','흑')}${B('side','r','랜덤')}</div><div class="row"><b>제한 시간</b>${[1,3,5,10].map(m=>B('time',m*60,m+'분')).join('')}<span>(각자)</span></div><div class="row"><b>피셔 룰</b><label><input type="checkbox" id="fi"${c.fi?' checked':''}${d}> 사용</label>${c.fi?' 수마다 '+[1,2,3,5,10].map(v=>B('inc',v,'+'+v+'초')).join(''):''}</div>`+(H?`<div class="row"><button class="p" id="sg"${st.p[1]?'':' disabled'}>게임 시작</button></div>`:'')}
+$('#cf').onclick=e=>{const b=e.target.closest('button');if(!b||st.ph!=='lobby'||pi()!==0)return;if(b.id==='sg'){if(st.p[1]){begin(st);commit()}return}if(b.dataset.k){st.cfg[b.dataset.k]=b.dataset.k==='side'?b.dataset.v:+b.dataset.v;commit()}};
+$('#cf').onchange=e=>{if(e.target.id==='fi'&&st.ph==='lobby'&&pi()===0){st.cfg.fi=+e.target.checked;commit()}};
+$('#lo').onclick=e=>{if(e.target.id!=='lf'||st.ph!=='life')return;e.target.disabled=true;if(hostConn)hostConn.send({lf:1});else if(st.lc[0]==null){lifeDraw(st,0);commit()}};
 const PID=c=>'unochess-'+c,err=m=>{$('#er').textContent=m};
 function send(){const m={st};if(hostConn){hostConn.open&&hostConn.send(m)}else conns.forEach(c=>c.open&&c.send(m))}
 function ready(code){$('#lobby').style.display='none';$('#game').style.display='flex';$('h1').style.display='none';$('#rc').textContent=code}
-function adopt(s){if(s&&s.seq>(st?st.seq:-1)){st=s;render()}}
+function adopt(s){if(s&&(!st||s.seq>st.seq||(s.seq===st.seq&&s.h&&!st.h))){st=s;t0=performance.now();render()}}
 function guest(code){const gp=new Peer();
 gp.on('open',()=>{const c=gp.connect(PID(code),{reliable:true});hostConn=c;
 c.on('open',()=>{ready(code);c.send({hello:me})});c.on('data',m=>{if(m.st)adopt(m.st)});
@@ -149,10 +177,12 @@ try{me=sessionStorage['m'+code]||(sessionStorage['m'+code]=rnd())}catch(e){me=rn
 err('연결 중…');const hp=new Peer(PID(code));
 hp.on('open',()=>{st=newGame();ready(code);commit()});
 hp.on('connection',c=>c.on('data',m=>{
-if(m.hello){if(!conns.includes(c))conns.push(c);if(st.p[1]==null&&m.hello!==me){st.p[1]=m.hello;lg(st,'상대가 입장했습니다 — 진영은 랜덤으로 배정되었습니다');commit()}else c.send({st});return}
-if(m.st&&m.st.seq>st.seq){st=m.st;render();conns.forEach(o=>o!==c&&o.open&&o.send({st}))}}));
+if(m.hello){if(!conns.includes(c))conns.push(c);if(st.p[1]==null&&m.hello!==me){st.p[1]=m.hello;lg(st,'상대가 입장했습니다');commit()}else c.send({st});return}
+if(m.lf){if(st.ph==='life'&&st.lc[1]==null){lifeDraw(st,1);commit()}return}
+if(m.st&&m.st.seq>st.seq){st=m.st;t0=performance.now();render();conns.forEach(o=>o!==c&&o.open&&o.send({st}))}}));
 hp.on('error',e=>{if(e.type==='unavailable-id'){hp.destroy();guest(code)}else err('연결 오류: '+e.type)})}
 const go=()=>{const c=$('#cd').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');if(c)enter(c)};
 $('#go').onclick=go;$('#cd').onkeydown=e=>{if(e.key==='Enter')go()};
 $('#nw').onclick=()=>{$('#cd').value=Math.random().toString(36).slice(2,6).toUpperCase()};
+setInterval(clk,250);
 </script></body></html>
